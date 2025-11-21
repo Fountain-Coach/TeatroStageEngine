@@ -1,4 +1,0 @@
-module TeatroPhysicsPackageTests {
-    header "/Users/benedikteickhoff/Development/Github-Desktop/FountainKit/Packages/TeatroPhysics/.build/arm64-apple-macosx/debug/TeatroPhysicsPackageTests.build/TeatroPhysicsPackageTests-Swift.h"
-    requires objc
-}
