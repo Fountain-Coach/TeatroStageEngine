@@ -1,10 +1,13 @@
-TeatroPhysics is a small, renderer‑agnostic rigid‑body engine dedicated to Teatro rigs (Fadenpuppe, constellation props, doors, backline). It lives as a first‑party SwiftPM package under `Packages/` so FountainKit can depend on it without going through `External/`; later we can split it into a standalone GitHub repo without changing the public API.
+TeatroPhysics now acts as the core of a broader Teatro Stage Engine: the rigid‑body solver and puppet rig live here, alongside the written specs for camera, room, style, input, and interchange. The Swift code remains pure and renderer‑agnostic; the surrounding `spec/` tree is the human‑readable contract that other repos (FountainKit, JS demos, tools) must follow.
 
-Keep the scope narrow and explicit: bodies, forces, and constraints that match the Teatro demos, not a general physics playground. The engine should stay deterministic, headless, and testable — no Metal, no SDL, no UI dependencies. Visual demos (MetalViewKit, Three.js) sit on top of it and treat it as a pure model/solver.
+Operating rules:
+- This repository is the authoritative description of the Teatro puppet stage as an engine. The Three.js demo is a historical reference; if behaviour diverges, update the spec here first, then align implementations.
+- Physics stays deterministic, headless, and testable — no Metal, SDL, or UI dependencies. Renderers treat this package as a model/solver and map its snapshots into their own coordinate systems and visuals.
+- Specs live under `spec/` in small, focused directories (`camera`, `physics`, `rig-puppet`, `stage-room`, `style`, `interchange`). Each directory has its own `AGENTS.md` describing what belongs there and must be kept current when code or demos change.
 
 Implementation norms:
-- Prefer small, immutable value types (`Vec3`, `Quaternion`) and thin `class` wrappers only where identity is required.
-- Keep the integrator simple (semi‑implicit Euler or Verlet) and stable at 60 Hz; document assumptions about timestep.
-- Constraint types are explicit (`DistanceConstraint`, `PointToPointConstraint`); avoid a generic “do everything” constraint at this stage.
-- Tests should lock in puppet behaviour at a coarse level (energy not exploding, distances staying near targets, ground constraints respected).
+- Prefer small, immutable value types (`TPVec3`) and thin reference types (`TPBody`, rigs) only where identity is required.
+- Keep the integrator simple (semi‑implicit Euler) and stable at 60 Hz; document assumptions about timestep in `spec/physics/world-and-timestep.md`.
+- Constraint types are explicit (`TPDistanceConstraint` for now); new constraints must be justified by a real Teatro use‑case and documented before being added.
+- Tests should lock in puppet behaviour at a coarse level (energy not exploding, distances staying near targets, rig remaining within bounds) rather than only checking single‑step math.
 
