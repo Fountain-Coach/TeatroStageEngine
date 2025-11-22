@@ -1,161 +1,158 @@
-TeatroPhysics is a small, deterministic game engine for the Teatro puppet stage. It is written in pure Swift, has no UI or rendering dependencies, and is designed to be embedded into hosts like FountainKit, MetalViewKit demos, or command‑line tools. This document describes the engine as a product, not just as a math helper.
+TeatroStageEngine
+==================
 
-## 0. Purpose and Scope
+TeatroStageEngine is the canonical game engine for the Teatro puppet stage: a small, pure‑Swift package that defines the physics core, puppet rig, stage geometry, and written specs for camera, visual style, and interchange. It is renderer‑agnostic by design — no Metal, SDL, or UIKit — and is meant to be embedded into hosts like FountainKit, MetalViewKit demos, or web frontends via a thin bridge.
 
-TeatroPhysics exists to make one specific class of scenes precise and repeatable: a Teatro stage with gravity, hanging puppets, strings, and a ground plane. The primary reference implementation is the JavaScript demo in `Design/teatro-engine-spec/demo1.html` (Three.js + Cannon.js). The Swift engine does not try to be a general physics playground; it aims to mirror that behaviour closely, then expose a clean API for other instruments that want the same rig logic.
+From the engine’s point of view, there is only:
+- a world with gravity,
+- a rig (the Fadenpuppe marionette),
+- a three‑sided room,
+- a camera that orbits and zooms around that scene,
+- and a deterministic way to advance state and take snapshots.
 
-The engine stays headless:
-- It advances bodies in time under forces and constraints.
-- It exposes snapshots (positions and velocities).
-- It knows nothing about cameras, Metal, SDL, or Teatro prompts.
+Everything else — drawing, MIDI control, network APIs — lives on top.
 
-Hosts are responsible for:
-- choosing a projection and camera,
-- drawing bodies as geometry (boxes, lines, strings, lights),
-- mapping engine state into Property Exchange or OpenAPI when needed.
+## 0. What lives here
 
-## 1. World Model
+This repository carries two things in lockstep:
 
-The engine uses a simple, conventional world:
-- Right‑handed coordinates, with `y` up.
-- Positions and lengths in arbitrary units (the Three.js demo treats them as “meters”; we mirror its relative sizes).
-- Time in seconds.
+1. **Specs** under `spec/`  
+   These documents describe the engine in human terms:
+   - `spec/camera` — orthographic camera model and input mapping.
+   - `spec/physics` — world/timestep and constraint behaviour.
+   - `spec/rig-puppet` — Fadenpuppe topology and geometry.
+   - `spec/stage-room` — floor, walls, and door geometry.
+   - `spec/style` — paper palette, line weights, light shapes.
+   - `spec/interchange` — snapshot schema and integration notes.
 
-The world is represented by `TPWorld`:
-- holds all `TPBody` instances (rigid bodies),
-- holds all `TPConstraint` instances (joints, strings),
-- has global parameters:
-  - `gravity: TPVec3` (default `(0, -9.82, 0)`),
-  - `linearDamping: Double` (simple velocity damping per step).
+   If you change behaviour, update the relevant spec first and then the code.
 
-Integration is semi‑implicit Euler:
-1. For each body with non‑zero `mass`, we compute acceleration from gravity.
-2. We integrate `velocity` from acceleration and damping.
-3. We integrate `position` from velocity and timestep.
-4. We then run all constraints once to correct positions.
+2. **Engine code** under `Sources/TeatroPhysics`  
+   This is the minimal Swift core that implements the specs:
+   - `TPVec3` — small value type for 3D vectors.
+   - `TPBody` — rigid body with position, velocity, mass.
+   - `TPWorld` — collection of bodies and constraints with gravity and damping.
+   - `TPConstraint` and `TPDistanceConstraint` — a soft rope/rod between two bodies.
+   - `TPPuppetRig` — assembles a world matching the Fadenpuppe rig spec and exposes
+     `step(dt:time:)` and `snapshot()` for hosts.
 
-Callers own the clock. A host creates a world, then repeatedly calls `world.step(dt:)` with its chosen `dt` (the puppet demos assume `dt ≈ 1/60`).
+The engine does not know about cameras or rooms explicitly; those are described in `spec/` and implemented in whichever renderer you plug in (MetalViewKit, Three.js, SVG, etc.).
 
-## 2. Bodies
+## 1. World + physics core
 
-`TPBody` is the engine’s rigid body:
-- `position: TPVec3` — center of mass in world space.
-- `velocity: TPVec3` — linear velocity.
-- `mass: Double` and derived `invMass`.
+The physics layer is intentionally small and deterministic:
 
-Bodies do not yet rotate. The puppet is modelled as a set of point‑masses connected by distance constraints; volumes (boxes) are reintroduced by the renderer, not by the solver. This keeps the engine small and predictable while still allowing a marionette‑style rig.
+- Coordinates: right‑handed, `y` up. Units are abstract but match the Three.js demo scale (floor ≈ 30 units wide, walls 20 units high, puppet ≈ 10 units tall).
+- World: `TPWorld` owns bodies and constraints plus a gravity vector and linear damping.
+- Integrator: semi‑implicit Euler (`velocity` from gravity + damping, then `position` from velocity).
+- Constraints: objects conforming to `TPConstraint.solve(dt:)` that nudge body positions to reduce error; the first and primary one is `TPDistanceConstraint`.
 
-Typical usage:
-- A bar, torso, head, hands, and feet are all separate bodies.
-- A “ground” is implicit (the renderer and/or higher‑level engine may add contacts later).
+The reference timestep is `dt = 1/60`. Hosts own the clock and call `world.step(dt:)` at whatever cadence they need, clamping `dt` if required. For details, see `spec/physics/world-and-timestep.md` and `spec/physics/constraints.md`.
 
-## 3. Constraints
+## 2. Puppet rig (Fadenpuppe)
 
-The constraint system is intentionally small:
+The puppet rig is implemented by `TPPuppetRig` and specified in `spec/rig-puppet`:
 
-- `TPConstraint` is a protocol with a single method: `solve(dt:)`.
-- `TPDistanceConstraint` keeps two bodies at approximately a target distance:
-  - constructed with `bodyA`, `bodyB`, `restLength`, and `stiffness`,
-  - on each `solve` it computes the error between current distance and `restLength`,
-  - then nudges `position` of both bodies along the line between them, scaled by `stiffness` and mass.
+- Bodies:
+  - `bar` — crossbar above the stage.
+  - `torso` — central block.
+  - `head` — head block.
+  - `handL`, `handR` — left and right hands.
+  - `footL`, `footR` — left and right feet.
+- Skeleton constraints keep head, hands, and feet attached to the torso.
+- String constraints connect bar to head and hands.
 
-This behaves like a soft rope or rod:
-- high stiffness ≈ tight string,
-- lower stiffness ≈ rubbery connection.
+At construction time, the rig:
+- creates a `TPWorld`,
+- positions bodies according to the geometry spec,
+- adds distance constraints for bones and strings using initial distances as rest lengths.
 
-Additional constraints can be added later (hinges, point‑to‑point joints that respect offsets) using the same interface. For the first Teatro puppet, distance constraints are enough to reproduce the visual behaviour.
+During simulation:
+- `step(dt:time:)` drives the bar using a simple sway/up‑down motion (mirroring the JS demo) and advances the world.
+- `snapshot()` returns a `TPPuppetSnapshot` with body positions; renderers map those into their own vector types and draw box outlines, silhouettes, strings, etc.
 
-## 4. Puppet Rig Specification
+## 3. Stage geometry, camera, and style
 
-The Fadenpuppe is represented by `TPPuppetRig`. It owns a `TPWorld` plus the specific bodies and constraints that mirror the Three.js demo:
+TeatroStageEngine does not ship a renderer, but it does lock down the numbers and behaviour that renderers should follow:
 
-Bodies (all `TPBody`):
-- `barBody` — overhead crossbar; light mass, slightly above the puppet.
-- `torsoBody` — central body segment.
-- `headBody` — head block; above torso.
-- `handLBody`, `handRBody` — left and right hands/forearms.
-- `footLBody`, `footRBody` — left and right feet/legs.
+- **Stage room** (`spec/stage-room`):
+  - Floor: 30 × 20 rectangle in the XZ plane, centered at the origin, at `y = 0`.
+  - Walls: back, left, and right walls 20 units high around the floor.
+  - Door: smaller rectangle cut into the right wall toward the back.
 
-Initial positions are chosen to match the JS demo descriptively:
-- Bar around `(0, 15, 0)`.
-- Torso around `(0, 8, 0)`.
-- Head around `(0, 10, 0)`.
-- Hands around `(-1.8, 8, 0)` and `(1.8, 8, 0)`.
-- Feet around `(-0.6, 5, 0)` and `(0.6, 5, 0)`.
+- **Camera** (`spec/camera`):
+  - Orthographic camera with frustum derived from `frustumSize = 40` and viewport aspect.
+  - Fixed elevation `atan(1 / sqrt(2))` (~35°).
+  - Orbiting via azimuth around the Y axis.
+  - Zoom as an orthographic scale factor, clamped in `[0.5, 3.0]`.
+  - Input mapping for pointer drag, wheel, and pinch is documented so orbit/zoom feel consistent across implementations.
 
-Constraints:
-- Skeleton:
-  - torso ↔ head,
-  - torso ↔ each hand,
-  - torso ↔ each foot.
-- Strings:
-  - bar ↔ head,
-  - bar ↔ each hand.
+- **Style** (`spec/style`):
+  - Paper background `#f4ead6`.
+  - Line colour `#111111`.
+  - Hairline edges for room and puppet, slightly lighter shapes for floor spot and back‑wall wash.
 
-Each constraint measures the initial distance on construction and keeps that as `restLength`. Stiffness is tuned to give the same “loose but controlled” motion as the Three.js rig: the bar moves first, then the limbs swing and settle.
+These specs give MetalViewKit, Three.js, or SVG renderers enough structure to produce the same stage picture from engine state.
 
-The rig exposes:
-- `step(dt:time:)` — advances the world by one timestep; it also calls a private `driveBar(time:)` that moves the crossbar in a side‑to‑side + up/down pattern matching the JS demo.
-- `snapshot()` — returns `TPPuppetSnapshot` with the current positions of all bodies.
+## 4. Interchange and integration
 
-Hosts can convert snapshots into their own vector types (for example, `TeatroVec3` in MetalViewKit) and draw the puppet however they like: as boxes, lines, or silhouettes.
+`spec/interchange/snapshot-schema.md` outlines how to represent the engine state for logs or remote use:
 
-## 5. Stage and Room
+- `time` in seconds,
+- `camera` (azimuth, zoom, and optionally derived fields),
+- `bodies` as a map from body name to position and velocity.
 
-TeatroPhysics itself does not draw or even explicitly represent the room geometry; it assumes:
-- a ground plane at `y = 0` (the puppet’s feet are near this plane),
-- walls and doors are a responsibility of the renderer,
-- all bodies are simulated in the same world coordinates as in the reference demo.
+Hosts like FountainKit can:
+- record sequences of snapshots as NDJSON for replay,
+- wrap the engine behind a small OpenAPI service,
+- map camera/rig parameters into MIDI CI Property Exchange facts.
 
-The canonical room for the puppet demo is:
-- floor: rectangle `30 × 20` units centered at the origin,
-- walls: three sides of that floor raised to height `20` units,
-- door: a small rectangle cut into the right wall (approx. 8 units high).
+The Swift package itself remains unaware of HTTP or MIDI; it exposes only Swift types and stepping APIs.
 
-MetalViewKit and other renderers should use the same numeric values when projecting this world into view space so that camera and rig feel identical to the reference.
+## 5. Using the engine from another package
 
-## 6. Embedding API
+Add TeatroStageEngine as a dependency in your `Package.swift`:
 
-The engine is designed to be easy to embed:
+```swift
+.package(url: "https://github.com/Fountain-Coach/TeatroStageEngine.git", from: "0.2.0"),
+```
 
-1. A host adds the `TeatroPhysics` SwiftPM package:
-   - for in‑repo use (as in FountainKit): `.package(url: "https://github.com/Fountain-Coach/TeatroPhysics.git", from: "0.2.0")`.
-2. It imports `TeatroPhysics` and chooses one of two paths:
-   - Use `TPWorld` directly for a custom scene:
-     - create bodies, add them to the world,
-     - add constraints,
-     - call `world.step(dt:)`,
-     - read `body.position` values.
-   - Use `TPPuppetRig` for the canonical Fadenpuppe:
-     - create a rig instance,
-     - repeatedly call `rig.step(dt: time:)` from a render loop,
-     - call `rig.snapshot()` and feed positions into a renderer.
-3. All time‑stepping happens on the host’s schedule; there are no timers inside the engine.
+Then, in your target dependencies:
 
-The engine is sendable and pure Swift; no AppKit, UIKit, Metal, or SwiftUI are imported in this package. That makes it suitable for macOS apps, command‑line tools, or tests.
+```swift
+.product(name: "TeatroPhysics", package: "TeatroStageEngine")
+```
 
-## 7. Determinism and Testing
+In code:
 
-TeatroPhysics aims to be deterministic for a given sequence of `step(dt:)` calls:
-- There is no hidden randomisation.
-- Gravity and damping are explicit.
-- Constraints are applied in a stable order within a single world instance.
+```swift
+import TeatroPhysics
 
-The test suite (under `Tests/TeatroPhysicsTests`) covers:
-- free‑fall sanity (`testFreeFallMovesDownwards`),
-- distance constraint behaviour over multiple steps (`testDistanceConstraintKeepsBodiesClose`).
+let rig = TPPuppetRig()
+var time = 0.0
+let dt = 1.0 / 60.0
 
-As the engine evolves, additional tests should lock in puppet rig behaviour at a coarse level, for example:
-- positions staying within a bounding box,
-- average energy not exploding over a long simulation,
-- string distances staying near their rest length.
+for _ in 0..<600 {
+    rig.step(dt: dt, time: time)
+    let snapshot = rig.snapshot()
+    // map snapshot.body positions into your renderer here
+    time += dt
+}
+```
 
-## 8. Future Extensions
+For a custom scene, work directly with `TPWorld`, `TPBody`, and `TPDistanceConstraint`.
 
-The short‑term evolution path is clear:
-- add more constraint types (e.g. a point‑to‑point joint that respects anchor offsets),
-- add basic ground contacts for reps or props,
-- expose hooks so other Teatro instruments (constellation fields, doors, backlines) can attach their own bodies and constraints into the same world.
+## 6. Status and evolution
 
-The guiding rule, though, is to keep TeatroPhysics focused: a small, predictable engine for Teatro rigs, not a general‑purpose game engine. When in doubt, prefer a narrow, well‑documented feature that matches a real Teatro demo over a generic but unused abstraction.
+Current status:
+- Physics core and puppet rig are implemented in Swift.
+- Specs for camera, physics, rig, room, style, and interchange are scaffolded under `spec/`.
+- FountainKit integrates this engine via the `teatro-stage-app` demo using MetalViewKit.
+
+Short‑term work:
+- Tighten numerical parity with the original Three.js + Cannon.js demo by aligning camera and rig parameters.
+- Add rig‑level tests that assert stability and rough motion envelopes over long runs.
+- Provide a minimal demo inside this repo (e.g. SVG or SwiftUI+Metal) that consumes `TPPuppetRig` and `spec/` without depending on FountainKit.
+
+The guiding principle is to keep this package small, deterministic, and well‑specified. New features (more constraints, contacts, additional Teatro rigs) should start as updates to `spec/` and only then appear in `Sources/`.
 
