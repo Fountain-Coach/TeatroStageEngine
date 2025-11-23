@@ -156,3 +156,15 @@ Short‑term work:
 
 The guiding principle is to keep this package small, deterministic, and well‑specified. New features (more constraints, contacts, additional Teatro rigs) should start as updates to `spec/` and only then appear in `Sources/`.
 
+## 7. Relationship to FountainKit instruments
+
+FountainKit treats the Teatro stage as a small set of instruments layered on top of this engine: a **Stage World** surface for global physics knobs, a **Puppet** surface for rig inputs and pose, a **Camera** surface for view control, and optional **Style** and **Recording** surfaces. Those instruments are defined by OpenAPI specs and PE facts in the FountainKit repository; this package remains the physics and spec authority.
+
+When you design or update those instruments:
+
+- Use the specs under `spec/**` and the Swift types in `Sources/TeatroPhysics` as the source of truth for geometry, physics parameters, camera behaviour, style bounds, and snapshot shapes.
+- Keep HTTP payloads and PE properties as thin veneers over the snapshot and configuration types described here.
+- Treat this repository as the place where changes to stage semantics are made and reviewed; FountainKit’s instruments and prompts should follow.
+
+For a more detailed mapping between TeatroStageEngine concepts and FountainKit instrument surfaces, see `docs/TeatroStage-Instruments-Map.md` in this repo and the corresponding `Design/TeatroStage-Instruments-Map.md` document in the FountainKit repository.
+

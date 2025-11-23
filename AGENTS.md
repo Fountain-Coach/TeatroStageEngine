@@ -12,3 +12,5 @@ Implementation norms:
 - Prefer small value types (`TPVec3`) and thin reference types (`TPBody`, `TPPuppetRig`) only where identity is required.
 - Keep the Swift package renderer‑agnostic and reusable; visual choices belong in demos and host apps.
 - Maintain the mapping between Swift, TS, and specs: field names and units must line up so snapshots can flow between the engine, web demo, and FountainKit without adapters that “fix” mismatches on the fly.
+
+For a higher‑level view of how this engine is carved into instruments and tools in FountainKit (Stage World, Puppet, Camera, Style, Recording), see `docs/TeatroStage-Instruments-Map.md` in this repo and the matching `Design/TeatroStage-Instruments-Map.md` document in the FountainKit repository.

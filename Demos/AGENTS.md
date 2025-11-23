@@ -4,3 +4,4 @@ The `Demos/` tree holds reference implementations of the Teatro Stage Engine. Th
 
 When making changes to rig, camera, or room behaviour, update `spec/` and the Swift implementation first, then adjust the demos so they continue to match.
 
+If you are using these demos as frontends for FountainKit instruments (world/puppet/camera/recording), keep their behaviour aligned with the mapping described in `docs/TeatroStage-Instruments-Map.md`.
