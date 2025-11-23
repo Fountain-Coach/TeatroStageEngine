@@ -103,6 +103,34 @@ public final class TPGroundConstraint: TPConstraint {
     }
 }
 
+/// Bouncy ground contact used for the ball baseline: it prevents penetration
+/// below the floor plane and reflects vertical velocity with a restitution
+/// factor so the ball can bounce before settling under damping.
+public final class TPBouncyGroundConstraint: TPConstraint {
+    public let body: TPBody
+    public let floorY: Double
+    public let restitution: Double
+
+    public init(body: TPBody, floorY: Double = 0, restitution: Double = 0.4) {
+        self.body = body
+        self.floorY = floorY
+        self.restitution = restitution
+    }
+
+    public func solve(dt: Double) {
+        _ = dt
+        let halfY = body.halfExtents?.y ?? 0
+        let bottomY = body.position.y - halfY
+        if bottomY < floorY {
+            let penetration = floorY - bottomY
+            body.position.y += penetration
+            if body.velocity.y < 0 {
+                body.velocity.y = -body.velocity.y * restitution
+            }
+        }
+    }
+}
+
 public final class TPWorld: @unchecked Sendable {
     public var bodies: [TPBody] = []
     public var constraints: [TPConstraint] = []

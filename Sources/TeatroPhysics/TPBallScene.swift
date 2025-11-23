@@ -43,8 +43,9 @@ public final class TPBallScene: @unchecked Sendable {
         ballBody = TPBody(position: initialPosition, mass: mass, halfExtents: halfExtents)
         world.addBody(ballBody)
 
-        // Floor at y = 0, matching the stage room definition.
-        let ground = TPGroundConstraint(body: ballBody, floorY: 0)
+        // Floor at y = 0, matching the stage room definition, with a bouncy
+        // contact so the ball can rebound before settling.
+        let ground = TPBouncyGroundConstraint(body: ballBody, floorY: 0, restitution: 0.4)
         world.addConstraint(ground)
     }
 
@@ -65,4 +66,3 @@ public final class TPBallScene: @unchecked Sendable {
         ballBody.velocity = TPVec3(x: speed, y: 0, z: 0)
     }
 }
-
