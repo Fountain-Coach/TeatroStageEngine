@@ -132,3 +132,18 @@ From this repo, the key entry points for instrument authors are:
 
 For the FountainKit‑side view (how these concepts become concrete instruments, OpenAPI specs, and facts), see the `Design/TeatroStage-Instruments-Map.md` document in the FountainKit repository.
 
+6. Authoring Workflow (Short Version)
+-------------------------------------
+
+When you come back to “The Teatro” after a while, use this path:
+
+1. **Change behaviour here first**  
+   - Update the relevant spec under `spec/**` (physics, rig, room, camera, style, interchange, authoring).  
+   - Adjust `Sources/TeatroPhysics/*` and tests to match. This repo continues to be the authority on how the stage actually behaves.
+
+2. **Then adapt instruments in FountainKit**  
+   - If the change introduces new knobs or observables, update the corresponding OpenAPI specs and facts in FountainKit so instruments (Stage World, Puppet, Camera, Style, Recording) expose them.  
+   - Keep those surfaces as thin veneers over the specs and types defined here.
+
+3. **Keep prompts and facts in FountainStore**  
+   - Teatro prompts and PE facts live in FountainStore via FountainKit seeders; they are not stored in this repo. When you change an instrument, update the prompt/facts there, but always point back to this engine and its specs for behaviour.
